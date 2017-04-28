@@ -1,5 +1,5 @@
 import React, {Component, PropTypes} from 'react';
-import {Animated, ScrollView, View, StyleSheet, Platform} from 'react-native';
+import {ScrollView, View, StyleSheet, Platform, RefreshControl} from 'react-native';
 import {shallowEqual, swapArrayElements} from './utils';
 import Row from './Row';
 
@@ -21,6 +21,7 @@ export default class SortableList extends Component {
     sortingEnabled: PropTypes.bool,
     scrollEnabled: PropTypes.bool,
     horizontal: PropTypes.bool,
+    refreshControl: PropTypes.element,
 
     renderRow: PropTypes.func.isRequired,
 
@@ -49,6 +50,7 @@ export default class SortableList extends Component {
   _contentOffset = {x: 0, y: 0};
 
   state = {
+    animated: false,
     order: this.props.order || Object.keys(this.props.data),
     rowsLayouts: null,
     containerLayout: null,
@@ -70,9 +72,9 @@ export default class SortableList extends Component {
 
     if (data && nextData && !shallowEqual(data, nextData)) {
       uniqueRowKey.id++;
-      this._areRowsAnimated = false;
       this._rowsLayouts = [];
       this.setState({
+        animated: false,
         data: nextData,
         containerLayout: null,
         rowsLayouts: null,
@@ -145,9 +147,11 @@ export default class SortableList extends Component {
   }
 
   render() {
-    const {contentContainerStyle, horizontal, style: containerStyle} = this.props;
-    const {contentHeight, contentWidth, scrollEnabled} = this.state;
+    const {contentContainerStyle, horizontal, style} = this.props;
+    const {animated, contentHeight, contentWidth, scrollEnabled} = this.state;
+    const containerStyle = StyleSheet.flatten([style, {opacity: Number(animated)}])
     const innerContainerStyle = [styles.container];
+    let {refreshControl} = this.props;
 
     if (horizontal) {
       innerContainerStyle.push({width: contentWidth});
@@ -155,9 +159,16 @@ export default class SortableList extends Component {
       innerContainerStyle.push({height: contentHeight});
     }
 
+    if (refreshControl && refreshControl.type === RefreshControl) {
+      refreshControl = React.cloneElement(this.props.refreshControl, {
+        enabled: scrollEnabled, // fix for Android
+      });
+    }
+
     return (
-      <Animated.View style={containerStyle} ref={this._onRefContainer}>
+      <View style={containerStyle} ref={this._onRefContainer}>
         <ScrollView
+          refreshControl={refreshControl}
           ref={this._onRefScrollView}
           horizontal={horizontal}
           contentContainerStyle={contentContainerStyle}
@@ -168,13 +179,13 @@ export default class SortableList extends Component {
             {this._renderRows()}
           </View>
         </ScrollView>
-      </Animated.View>
+      </View>
     );
   }
 
   _renderRows() {
     const {horizontal, sortingEnabled, renderRow} = this.props;
-    const {order, data, activeRowKey, releasedRowKey, rowsLayouts} = this.state;
+    const {animated, order, data, activeRowKey, releasedRowKey, rowsLayouts} = this.state;
 
     let rowHeight = 0;
     let rowWidth = 0;
@@ -220,7 +231,7 @@ export default class SortableList extends Component {
           key={uniqueRowKey(key)}
           ref={this._onRefRow.bind(this, key)}
           horizontal={horizontal}
-          animated={this._areRowsAnimated && !active}
+          animated={animated && !active}
           disabled={!sortingEnabled}
           style={style}
           location={location}
@@ -261,7 +272,9 @@ export default class SortableList extends Component {
             rowsLayouts: rowsLayoutsByKey,
             contentHeight,
             contentWidth,
-          }, () => (this._areRowsAnimated = true));
+          }, () => {
+            this.setState({animated: true});
+          });
         });
       });
   }
@@ -527,8 +540,8 @@ export default class SortableList extends Component {
       this._contentOffset = contentOffset;
   };
 
-  _onRefContainer = (animatedComponent) => {
-    this._container = animatedComponent && animatedComponent._component;
+  _onRefContainer = (component) => {
+    this._container = component;
   };
 
   _onRefScrollView = (component) => {
