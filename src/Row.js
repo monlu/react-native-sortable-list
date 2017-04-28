@@ -1,4 +1,4 @@
-import React, {Component, PropTypes} from 'react';
+import React, {Component, PropTypes, Children, cloneElement} from 'react';
 import {Animated, PanResponder, StyleSheet} from 'react-native';
 import {shallowEqual} from './utils';
 
@@ -37,6 +37,7 @@ export default class Row extends Component {
 
     this._animatedLocation = new Animated.ValueXY(props.location);
     this._location = props.location;
+    this._hasHandle = props.handle
 
     this._animatedLocation.addListener(this._onChangeLocation);
   }
@@ -54,19 +55,15 @@ export default class Row extends Component {
     },
 
     onPanResponderGrant: (e, gestureState) => {
-      e.persist();
-      this._wasLongPress = false;
+      if (this._hasHandle) {
+        this._activeHandle && this._registerGesture(e, gestureState)
+      } else {
+        e.persist();
+        this._wasLongPress = false;
+        this._longPressTimer = setTimeout(this._registerGesture.bind(this, e, gestureState), ACTIVATION_DELAY);
+      }
 
-      this._longPressTimer = setTimeout(() => {
-        this._wasLongPress = true;
-        this._target = e.nativeEvent.target;
-        this._prevGestureState = {
-          ...gestureState,
-          moveX: gestureState.x0,
-          moveY: gestureState.y0,
-        };
-        this._toggleActive(e, gestureState);
-      }, ACTIVATION_DELAY);
+
     },
 
     onPanResponderMove: (e, gestureState) => {
@@ -92,9 +89,12 @@ export default class Row extends Component {
     },
 
     onPanResponderRelease: (e, gestureState) => {
-      if (this._wasLongPress) {
+      if (this._wasLongPress || this._activeHandle) {
         this._toggleActive(e, gestureState);
 
+        if (this._hasHandle) {
+          this._activeHandle = false
+        }
       } else if (this._isTouchInsideElement(e)) {
         this._cancelLongPress();
 
@@ -151,6 +151,10 @@ export default class Row extends Component {
     this._relocate(this._nextLocation, animated);
   }
 
+  activateHandle() {
+    if (this._hasHandle) this._activeHandle = true
+  }
+
   render() {
     const {children, style} = this.props;
 
@@ -159,7 +163,7 @@ export default class Row extends Component {
         {...this._panResponder.panHandlers}
         style={[style, styles.container, this._animatedLocation.getLayout()]}
         onLayout={this._onLayout}>
-        {children}
+        {Children.map(children, (child) => cloneElement(child, {activateHandle: this.activateHandle.bind(this)}))}
       </Animated.View>
     );
   }
@@ -192,6 +196,18 @@ export default class Row extends Component {
     if (callback) {
       callback(e, gestureState, this._location);
     }
+  }
+
+  _registerGesture(e, gestureState) {
+    this._wasLongPress = true;
+    this._target = e.nativeEvent.target;
+    this._prevGestureState = {
+      ...gestureState,
+      moveX: gestureState.x0,
+      moveY: gestureState.y0,
+    };
+
+    this._toggleActive(e, gestureState);
   }
 
   _mapGestureToMove(prevGestureState, gestureState) {
